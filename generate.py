@@ -75,7 +75,82 @@ def norm_title(t):
     return re.sub(r"[^a-z0-9àèéìòù]+", "", t.lower())
 
 
-def collect(tema, ore_finestra, max_items):
+# ---------------------------------------------------------------------------
+# Apprendimento dai voti (pollici su/giù inviati dalla pagina via Google Form)
+# ---------------------------------------------------------------------------
+
+STOPWORDS = set("""
+il lo la i gli le un uno una di a da in con su per tra fra e o ma che chi cui non più del della dello dei degli delle al allo alla ai agli alle dal dallo dalla nel nello nella nei negli nelle sul sullo sulla sui sugli sulle come dopo prima contro anche ancora essere sono stato stata cosa ecco cosi così
+the a an of to in on for and or but with from by at as is are was were be been it its this that these those new news how why what when
+""".split())
+
+
+def load_votes(csv_url):
+    """Scarica i voti dal foglio Google pubblicato in CSV.
+
+    Ritorna una lista di (datetime, titolo, voto) dove voto è +1 o -1.
+    Per uno stesso titolo conta solo il voto più recente.
+    """
+    import csv as csvmod
+    import io
+    try:
+        data = fetch(csv_url).decode("utf-8")
+    except Exception as e:
+        print(f"  [voti] impossibile scaricare i voti: {e}")
+        return []
+    rows = list(csvmod.reader(io.StringIO(data)))
+    if len(rows) < 2:
+        return []
+    latest = {}
+    for row in rows[1:]:
+        if len(row) < 4:
+            continue
+        ts_raw, title, _tema, voto_raw = row[0], row[1].strip(), row[2], row[3].strip()
+        if not title:
+            continue
+        try:
+            ts = datetime.strptime(ts_raw.strip(), "%d/%m/%Y %H.%M.%S").replace(tzinfo=TZ)
+        except ValueError:
+            try:
+                ts = datetime.strptime(ts_raw.strip(), "%m/%d/%Y %H:%M:%S").replace(tzinfo=TZ)
+            except ValueError:
+                ts = datetime.now(TZ)
+        voto = 1 if "1" in voto_raw and "-" not in voto_raw else -1
+        key = norm_title(title)[:80]
+        if key not in latest or ts >= latest[key][0]:
+            latest[key] = (ts, title, voto)
+    return list(latest.values())
+
+
+def build_profile(votes):
+    """Profilo di interessi: peso per parola chiave, con decadimento temporale.
+
+    Un voto recente pesa più di uno vecchio (dimezza ogni 45 giorni).
+    """
+    import math
+    now = datetime.now(TZ)
+    weights = {}
+    for ts, title, voto in votes:
+        age_days = max(0.0, (now - ts).total_seconds() / 86400)
+        decay = 0.5 ** (age_days / 45)
+        for tok in re.findall(r"[a-zà-ú0-9]+", title.lower()):
+            if len(tok) < 3 or tok in STOPWORDS:
+                continue
+            weights[tok] = weights.get(tok, 0.0) + voto * decay
+    return weights
+
+
+def score_title(title, profile):
+    if not profile:
+        return 0.0
+    s = 0.0
+    for tok in set(re.findall(r"[a-zà-ú0-9]+", title.lower())):
+        if tok in profile:
+            s += max(-2.0, min(2.0, profile[tok]))
+    return s
+
+
+def collect(tema, ore_finestra, max_items, profile=None):
     pool = []
     for q in tema["query"]:
         try:
@@ -108,6 +183,19 @@ def collect(tema, ore_finestra, max_items):
     fresh = [it for it in unique if it["dt"] and it["dt"] >= cutoff]
     if len(fresh) < 3:  # tema con poche notizie: mostra comunque le più recenti
         fresh = unique[:3]
+    # punteggio dai voti dell'utente
+    for it in fresh:
+        it["score"] = score_title(it["title"], profile or {})
+    # scarta ciò che somiglia a notizie bocciate, se resta abbastanza materiale
+    liked = [it for it in fresh if it["score"] > -2.0]
+    if len(liked) >= 3:
+        dropped = len(fresh) - len(liked)
+        if dropped:
+            print(f"  {dropped} scartate per voti negativi")
+        fresh = liked
+    # ordina: prima gli argomenti graditi, a parità la notizia più recente
+    epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    fresh.sort(key=lambda it: (max(-3, min(3, round(it["score"]))), it["dt"] or epoch), reverse=True)
     return fresh[:max_items]
 
 
@@ -212,6 +300,8 @@ def render(cfg, sezioni, now, recap=None):
         f'<a href="#{esc(s["id"])}">{esc(s["nome"])}</a>' for s in sezioni
     )
 
+    fb = cfg.get("feedback") or {}
+
     body_sections = []
     for s in sezioni:
         items = s["items"]
@@ -219,11 +309,17 @@ def render(cfg, sezioni, now, recap=None):
             inner = '<p class="empty">Nessuna notizia rilevante in questa edizione.</p>'
         else:
             lead, rest = items[0], items[1:]
-            def meta(it):
+            def meta(it, _s=s):
                 lang_badge = f'<span class="lang">{it["lang"].upper()}</span>'
+                vote = ""
+                if fb.get("form_action"):
+                    vote = (f'<span class="vote" data-t="{esc(it["title"])}" data-s="{esc(_s["id"])}">'
+                            f'<button class="up" type="button" title="Mi interessa" aria-label="Mi interessa">&#128077;</button>'
+                            f'<button class="down" type="button" title="Non mi interessa" aria-label="Non mi interessa">&#128078;</button>'
+                            f'</span>')
                 return (f'<span class="src">{esc(it["source"])}</span>'
                         f'<span class="dot">·</span><span class="when">{esc(rel_time(it["dt"], now))}</span>'
-                        f'{lang_badge}')
+                        f'{lang_badge}{vote}')
             inner = (
                 f'<article class="lead"><a href="{esc(lead["link"])}" target="_blank" rel="noopener">'
                 f'<h3>{esc(lead["title"])}</h3></a><p class="meta">{meta(lead)}</p></article>'
@@ -249,6 +345,32 @@ def render(cfg, sezioni, now, recap=None):
             f'{paras}'
             '<p class="recap-note">Riassunto generato con AI a partire dai titoli di questa edizione.</p>'
             '</section>'
+        )
+
+    vote_js = ""
+    if fb.get("form_action"):
+        fb_json = json.dumps({
+            "action": fb["form_action"], "t": fb["campo_titolo"],
+            "s": fb["campo_tema"], "v": fb["campo_voto"],
+        })
+        vote_js = (
+            "<script>\n(function(){\n"
+            f"var FB={fb_json};\n"
+            'var KEY="rassegna-voti";\n'
+            'function st(){try{return JSON.parse(localStorage.getItem(KEY)||"{}")}catch(e){return {}}}\n'
+            "function save(m){try{localStorage.setItem(KEY,JSON.stringify(m))}catch(e){}}\n"
+            'function norm(t){return t.toLowerCase().replace(/[^a-z0-9\\u00e0\\u00e8\\u00e9\\u00ec\\u00f2\\u00f9]+/g,"").slice(0,80)}\n'
+            'function apply(){var m=st();document.querySelectorAll(".vote").forEach(function(v){var k=norm(v.dataset.t);var val=m[k];'
+            'v.querySelector(".up").classList.toggle("on",val===1);'
+            'v.querySelector(".down").classList.toggle("on",val===-1)})}\n'
+            'document.addEventListener("click",function(e){\n'
+            ' var b=e.target.closest(".vote button");if(!b)return;\n'
+            ' var wrap=b.closest(".vote");var val=b.classList.contains("up")?1:-1;\n'
+            " var fd=new FormData();fd.append(FB.t,wrap.dataset.t);fd.append(FB.s,wrap.dataset.s);"
+            'fd.append(FB.v,val>0?"+1":"-1");\n'
+            ' fetch(FB.action,{method:"POST",mode:"no-cors",body:fd}).catch(function(){});\n'
+            " var m=st();m[norm(wrap.dataset.t)]=val;save(m);apply();\n"
+            "});\napply();\n})();\n</script>"
         )
 
     gen_ts = now.strftime("%H:%M")
@@ -335,6 +457,14 @@ li .meta {{ margin-top: 4px; }}
 }}
 .recap p + p {{ margin-top: 10px; }}
 .recap-note {{ margin-top: 14px; font-size: 11.5px; color: var(--muted); }}
+.vote {{ display: inline-flex; gap: 2px; margin-left: 6px; }}
+.vote button {{
+  border: 0; background: none; cursor: pointer; font-size: 14px;
+  line-height: 1; padding: 2px 4px; border-radius: 6px;
+  filter: grayscale(1); opacity: .45; transition: all .15s;
+}}
+.vote button:hover {{ filter: none; opacity: 1; background: var(--badge); }}
+.vote button.on {{ filter: none; opacity: 1; background: var(--badge); }}
 footer {{ padding-top: 26px; font-size: 12.5px; color: var(--muted); text-align: center; }}
 footer a {{ color: var(--muted); }}
 </style>
@@ -351,8 +481,10 @@ footer a {{ color: var(--muted); }}
   {"".join(body_sections)}
   <footer>
     <p>{esc(cfg["sottotitolo"])}. Generata automaticamente tre volte al giorno dai feed di Google News.</p>
+    <p>Vota le notizie con &#128077; e &#128078;: le prossime edizioni impareranno dai tuoi gusti.</p>
   </footer>
 </div>
+{vote_js}
 </body>
 </html>
 """
@@ -361,10 +493,14 @@ footer a {{ color: var(--muted); }}
 def main():
     cfg = json.loads((BASE / "topics.json").read_text(encoding="utf-8"))
     now = datetime.now(TZ)
+    fb = cfg.get("feedback") or {}
+    votes = load_votes(fb["voti_csv"]) if fb.get("voti_csv") else []
+    profile = build_profile(votes)
+    print(f"[voti] {len(votes)} voti letti, {len(profile)} parole nel profilo")
     sezioni = []
     for tema in cfg["temi"]:
         print(f"[{tema['id']}] raccolta…")
-        items = collect(tema, cfg.get("ore_finestra", 72), cfg.get("max_per_tema", 8))
+        items = collect(tema, cfg.get("ore_finestra", 72), cfg.get("max_per_tema", 8), profile)
         print(f"  {len(items)} notizie")
         sezioni.append({**tema, "items": items})
     recap = build_recap(sezioni)

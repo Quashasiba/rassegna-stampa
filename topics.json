@@ -1,4 +1,11 @@
 {
+  "feedback": {
+    "form_action": "https://docs.google.com/forms/d/e/1FAIpQLSdZrjt1RpMXgvuGn6Z1gOFuqAkPniTEWoB5iDZha8NX6mtlqA/formResponse",
+    "campo_titolo": "entry.1581370586",
+    "campo_tema": "entry.1735016965",
+    "campo_voto": "entry.316579649",
+    "voti_csv": "https://docs.google.com/spreadsheets/d/e/2PACX-1vRm9qjqtLNbAZwRPjvCJHQJyhxQaR7uEH5TNCApRibQzh6zRm2ehQV4owKAlTJfRmcqorv8oaMqOmSw/pub?output=csv"
+  },
   "titolo": "La Rassegna",
   "sottotitolo": "Mobilità, fintech e città — tre edizioni al giorno",
   "ore_finestra": 72,

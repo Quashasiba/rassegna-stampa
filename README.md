@@ -17,6 +17,10 @@ Rassegna stampa automatica, aggiornata **tre volte al giorno** (circa alle 7:00,
 - **Recap AI** — se nel repository è configurato il secret `GEMINI_API_KEY` (Settings → Secrets and variables → Actions), in cima a ogni edizione compare "In sintesi", un breve riassunto in italiano delle novità salienti generato con Google Gemini. Senza chiave, la rassegna viene pubblicata semplicemente senza recap.
 - `.github/workflows/rassegna.yml` — esegue lo script tre volte al giorno e pubblica la pagina aggiornata.
 
+## Pollici e apprendimento
+
+Ogni notizia ha i pulsanti 👍/👎. I voti finiscono (via un modulo Google) in un foglio Google pubblicato in CSV, indicato in `topics.json` → `feedback.voti_csv`. A ogni edizione lo script legge i voti, costruisce un profilo di parole chiave (con peso che dimezza ogni 45 giorni) e lo usa per ordinare le notizie e scartare quelle simili a ciò che è stato bocciato. I voti più recenti sullo stesso titolo sostituiscono i precedenti.
+
 ## Aggiornamento manuale
 
 Dalla scheda **Actions** del repository: `Aggiorna rassegna stampa` → **Run workflow**.
