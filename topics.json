@@ -1,0 +1,57 @@
+{
+  "titolo": "La Rassegna",
+  "sottotitolo": "Mobilità, fintech e città — tre edizioni al giorno",
+  "ore_finestra": 72,
+  "max_per_tema": 8,
+  "temi": [
+    {
+      "id": "robotaxi",
+      "nome": "Robotaxi",
+      "descrizione": "Espansione dei servizi di guida autonoma nel mondo",
+      "query": [
+        { "q": "robotaxi when:7d", "lang": "en" },
+        { "q": "robotaxi OR \"taxi a guida autonoma\" OR \"guida autonoma\" Waymo OR Tesla OR Zoox when:7d", "lang": "it" }
+      ]
+    },
+    {
+      "id": "revolut",
+      "nome": "Revolut",
+      "descrizione": "Nuove funzionalità ed espansione",
+      "query": [
+        { "q": "Revolut when:7d", "lang": "it" },
+        { "q": "Revolut when:7d", "lang": "en" }
+      ]
+    },
+    {
+      "id": "auto-elettriche",
+      "nome": "Auto elettriche · Mercato",
+      "descrizione": "Dati di vendita, immatricolazioni e quote di mercato",
+      "query": [
+        { "q": "auto elettriche immatricolazioni OR mercato OR vendite when:7d", "lang": "it" },
+        { "q": "\"EV sales\" OR \"electric vehicle sales\" OR \"EV market\" when:7d", "lang": "en" }
+      ]
+    },
+    {
+      "id": "milano",
+      "nome": "Milano · ZTL e pedonalizzazioni",
+      "descrizione": "Nuove ZTL, aree pedonali, Area B e Area C",
+      "query": [
+        { "q": "Milano ZTL OR pedonalizzazione OR pedonale OR \"Area B\" OR \"Area C\" when:7d", "lang": "it" },
+        { "q": "Milano pedonalizzazione OR \"area pedonale\" OR \"zone 30\" when:30d", "lang": "it" }
+      ],
+      "richiedi": "milano|area\\s*[bc]\\b|palazzo marino|\\bsala\\b",
+      "escludi": "\\b(roma|torino|napoli|bologna|firenze|verona|genova|palermo|catania|bari|olimpico|flaminio|marittima)\\b",
+      "protetto": "milano(?!\\s*maritt)"
+    },
+    {
+      "id": "uber-bolt",
+      "nome": "Uber e Bolt in Italia",
+      "descrizione": "Ride hailing, taxi e NCC nel mercato italiano",
+      "query": [
+        { "q": "Uber Italia OR Milano OR Roma OR taxi OR NCC when:7d", "lang": "it" },
+        { "q": "Bolt taxi OR NCC OR \"ride hailing\" Italia when:7d", "lang": "it" }
+      ],
+      "richiedi": "\\buber\\b|\\bbolt\\b"
+    }
+  ]
+}
