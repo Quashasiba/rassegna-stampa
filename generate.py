@@ -6,10 +6,12 @@ Solo libreria standard: nessuna dipendenza da installare.
 """
 
 import json
+import os
 import re
 import html
 import urllib.request
 import urllib.parse
+import urllib.error
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
@@ -126,6 +128,72 @@ def rel_time(dt, now):
     return f"{dt.astimezone(TZ).day} {MESI[dt.astimezone(TZ).month - 1]}"
 
 
+def build_recap(sezioni):
+    """Riassunto in italiano delle novità salienti, generato con Google Gemini.
+
+    Legge la chiave dal secret GEMINI_API_KEY. Se la chiave manca o la
+    chiamata fallisce, la pagina viene comunque generata senza recap.
+    """
+    key = os.environ.get("GEMINI_API_KEY")
+    if not key:
+        print("  [recap] GEMINI_API_KEY assente: salto il riassunto AI")
+        return None
+    lines = []
+    for s in sezioni:
+        for it in s["items"][:5]:
+            lines.append(f"[{s['nome']}] {it['title']} ({it['source']})")
+    if not lines:
+        return None
+    prompt = (
+        "Questa è la lista dei titoli di una rassegna stampa personale, "
+        "raggruppati per tema tra parentesi quadre:\n\n" + "\n".join(lines) +
+        "\n\nScrivi un breve recap in italiano delle novità salienti, come farebbe "
+        "un giornalista in apertura di una rassegna stampa: tono sobrio ed elegante, "
+        "120-170 parole, prosa fluida senza elenchi puntati, senza markdown e senza "
+        "titolo. Tocca solo i temi per cui ci sono notizie davvero rilevanti, "
+        "collegandoli con naturalezza; ignora i titoli marginali o ripetuti."
+    )
+    model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+    body = json.dumps({
+        "systemInstruction": {"parts": [{"text": (
+            "Sei il curatore di una rassegna stampa in italiano, preciso e asciutto. "
+            "Non inventare fatti: usa solo le informazioni presenti nei titoli."
+        )}]},
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.4,
+            "maxOutputTokens": 2048,
+            "thinkingConfig": {"thinkingBudget": 0},
+        },
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+        data=body,
+        headers={
+            "x-goog-api-key": key,
+            "Content-Type": "application/json",
+            "User-Agent": UA,
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=90) as r:
+            data = json.loads(r.read().decode("utf-8"))
+        parts = data["candidates"][0]["content"]["parts"]
+        text = "\n".join(p.get("text", "") for p in parts).strip()
+        if len(text) < 40:
+            print("  [recap] risposta troppo corta, la ignoro")
+            return None
+        print(f"  [recap] generato ({len(text)} caratteri)")
+        return text
+    except urllib.error.HTTPError as e:
+        print(f"  [recap] fallito ({e.code}), procedo senza: {e.read()[:300]}")
+        return None
+    except Exception as e:
+        print(f"  [recap] fallito, procedo senza: {e}")
+        return None
+
+
 def edizione(now):
     if now.hour < 10:
         return "Edizione del mattino"
@@ -134,7 +202,7 @@ def edizione(now):
     return "Edizione della sera"
 
 
-def render(cfg, sezioni, now):
+def render(cfg, sezioni, now, recap=None):
     data_it = f"{GIORNI[now.weekday()]} {now.day} {MESI[now.month - 1]} {now.year}"
     tot = sum(len(s["items"]) for s in sezioni)
 
@@ -171,6 +239,17 @@ def render(cfg, sezioni, now):
             f'<section id="{esc(s["id"])}">'
             f'<header><h2>{esc(s["nome"])}</h2><p class="desc">{esc(s["descrizione"])}</p></header>'
             f'{inner}</section>'
+        )
+
+    recap_html = ""
+    if recap:
+        paras = "".join(f"<p>{esc(p.strip())}</p>" for p in recap.split("\n") if p.strip())
+        recap_html = (
+            '<section class="recap" aria-label="In sintesi">'
+            '<p class="recap-label">In sintesi</p>'
+            f'{paras}'
+            '<p class="recap-note">Riassunto generato con AI a partire dai titoli di questa edizione.</p>'
+            '</section>'
         )
 
     gen_ts = now.strftime("%H:%M")
@@ -244,6 +323,19 @@ li a {{ font-size: 16px; font-weight: 500; text-decoration: none; line-height: 1
 li a:hover {{ color: var(--accent); }}
 li .meta {{ margin-top: 4px; }}
 .empty {{ color: var(--muted); font-style: italic; padding: 8px 0 20px; }}
+.recap {{
+  margin: 30px 0 4px; padding: 22px 26px;
+  background: var(--card); border: 1px solid var(--rule); border-radius: 10px;
+}}
+.recap-label {{
+  font-size: 11px; font-weight: 600; letter-spacing: .22em; text-transform: uppercase;
+  color: var(--accent); margin-bottom: 10px;
+}}
+.recap p:not(.recap-label):not(.recap-note) {{
+  font-family: Fraunces, Georgia, serif; font-size: 17.5px; line-height: 1.6;
+}}
+.recap p + p {{ margin-top: 10px; }}
+.recap-note {{ margin-top: 14px; font-size: 11.5px; color: var(--muted); }}
 footer {{ padding-top: 26px; font-size: 12.5px; color: var(--muted); text-align: center; }}
 footer a {{ color: var(--muted); }}
 </style>
@@ -256,6 +348,7 @@ footer a {{ color: var(--muted); }}
     <p class="date"><b>{esc(data_it)}</b> &nbsp;·&nbsp; aggiornata alle {gen_ts} &nbsp;·&nbsp; {tot} notizie</p>
   </header>
   <nav>{nav}</nav>
+  {recap_html}
   {"".join(body_sections)}
   <footer>
     <p>{esc(cfg["sottotitolo"])}. Generata automaticamente tre volte al giorno dai feed di Google News.</p>
@@ -275,7 +368,8 @@ def main():
         items = collect(tema, cfg.get("ore_finestra", 72), cfg.get("max_per_tema", 8))
         print(f"  {len(items)} notizie")
         sezioni.append({**tema, "items": items})
-    out = render(cfg, sezioni, now)
+    recap = build_recap(sezioni)
+    out = render(cfg, sezioni, now, recap)
     (BASE / "index.html").write_text(out, encoding="utf-8")
     print(f"index.html generato ({len(out)} byte)")
 
