@@ -25,6 +25,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Genera la pagina
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python3 generate.py
 
       - name: Pubblica
@@ -38,4 +40,3 @@ jobs:
             git commit -m "Rassegna del $(TZ=Europe/Rome date '+%d/%m/%Y %H:%M')"
             git push
           fi
-
