@@ -153,7 +153,7 @@ def build_recap(sezioni):
         "titolo. Tocca solo i temi per cui ci sono notizie davvero rilevanti, "
         "collegandoli con naturalezza; ignora i titoli marginali o ripetuti."
     )
-    model = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+    model = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
     body = json.dumps({
         "systemInstruction": {"parts": [{"text": (
             "Sei il curatore di una rassegna stampa in italiano, preciso e asciutto. "
@@ -162,8 +162,7 @@ def build_recap(sezioni):
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
         "generationConfig": {
             "temperature": 0.4,
-            "maxOutputTokens": 2048,
-            "thinkingConfig": {"thinkingBudget": 0},
+            "maxOutputTokens": 4096,
         },
     }).encode("utf-8")
     req = urllib.request.Request(
