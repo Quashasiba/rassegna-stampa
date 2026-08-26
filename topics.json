@@ -51,6 +51,17 @@
       "protetto": "milano(?!\\s*maritt)"
     },
     {
+      "id": "balneari",
+      "nome": "Balneari · Aste e concessioni",
+      "descrizione": "Gare e aste per le concessioni balneari, direttiva Bolkestein",
+      "query": [
+        { "q": "concessioni balneari asta OR aste OR gara OR gare OR bando OR bandi when:7d", "lang": "it" },
+        { "q": "balneari Bolkestein OR concessioni OR spiagge when:14d", "lang": "it" }
+      ],
+      "richiedi": "balnear|spiagg|bolkestein|concessio",
+      "escludi": "\\b(oroscopo|meteo)\\b"
+    },
+    {
       "id": "uber-bolt",
       "nome": "Uber e Bolt in Italia",
       "descrizione": "Ride hailing, taxi e NCC nel mercato italiano",
